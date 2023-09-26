@@ -1,0 +1,7 @@
+CONFIG = dict(CONFIG, **{
+  'BINOC_PROCESS_AXION': True,
+})
+
+if CONFIG['BINOC_PROCESS_AXION']:
+  SRC_FILES += ['preprocessor.py']
+  SRC_PP_FILES += ['axion.py']

@@ -15,6 +15,10 @@ import errno
 import random
 import argparse
 
+#%ifdef 0
+# Bytecode belongs in ram not on my hard drive.
+sys.dont_write_bytecode = True
+#%endif
 
 from preprocessor import Preprocessor
 
@@ -55,6 +59,29 @@ def gReadFile(aFile):
 
 # -----------------------------------------------------------------------------
 
+#%ifdef 0
+def gZoneConfig(aZones, aBasePath):
+  # File Content
+  zone_base = '''
+  zone "{zone}" {lb}
+    type {type};
+    file "{path}/{zone}.zone";
+    allow-query {lb} any; {rb};
+  {rb}'''
+
+  # Prep the conf content
+  zone_content = ''
+
+  # Iterate over the zones in the configuration json and fill out the conf content
+  for _zone in aZones:
+    # Master
+    _content = zone_base.format(lb = "{", rb = "}",
+                                  zone = _zone, type = 'master',
+                                  path = aBasePath)
+    zone_content += _content
+
+  return zone_content
+#%endif
 
 # -----------------------------------------------------------------------------
 
@@ -140,6 +167,9 @@ def gProcessDirectory(aDirectory = '', aDefines = {}, aConfig = {}):
       'gOutput': gOutput,
       'gError': gError,
       'gTargetFile': gTargetFile,
+#%ifdef 0
+      'gZoneConfig': gZoneConfig,
+#%endif
     }
   }
 
@@ -151,6 +181,12 @@ def gProcessDirectory(aDirectory = '', aDefines = {}, aConfig = {}):
     'SRC_FILES': [],
     'SRC_PP_FILES': [],
     'MANUAL_TARGET_FILES': [],
+#%ifdef 0
+    'BINOC_NGX_SERVERS': [],
+    'BINOC_DNS_BASIC_ZONES': [],
+    'BINOC_DNS_ADV_ZONES': [],
+    'BINOC_DNS_ZONES': [],
+#%endif
   }
 
   # Exec the build script so we can harvest the locals
@@ -169,6 +205,34 @@ def gProcessDirectory(aDirectory = '', aDefines = {}, aConfig = {}):
   for file in exec_locals['SRC_FILES']:
     final_target_files += [gTargetFile(file, source_dir=aDirectory, final_target=aDirectory)] 
 
+#%ifdef 0
+  if 'BINOC_TARGETS' in exec_locals['CONFIG']:
+    # Create targets for BinOC Basic amd Advanced DNS Zones
+    for zone in exec_locals['BINOC_DNS_ZONES']:
+      zone_defs = dict(exec_locals['DEFINES'], **{
+        'BIND_ZONE_DOMAIN': zone,
+        'BIND_ZONE_SERIAL': datetime.today().strftime('%Y%m%d%H'),
+      })
+
+      if os.path.exists(os.path.abspath(TOPSRCDIR + aDirectory + '/' + zone + '.zone.in')):
+        final_target_files += [gTargetFile(zone + '.zone.in', cmd='pp', 
+                                           defs=zone_defs, source_dir=aDirectory,
+                                           final_target=aDirectory)]
+      else:
+        final_target_files += [gTargetFile('basic.zone.in', zone + '.zone', cmd='pp', 
+                                           defs=zone_defs, source_dir=aDirectory,
+                                           final_target=aDirectory)]
+
+    # Create targets for BinOC Nginx Standard Servers
+    for server in exec_locals['BINOC_NGX_SERVERS']:
+      if server['NGX_SUB_DOMAIN'] == 'www':
+        server['NGX_MAIN_SERVER'] = True
+      final_target_files += [gTargetFile(
+        'standard.server.in',
+        '{0}.{1}.server'.format(server['NGX_SUB_DOMAIN'], server['NGX_MAIN_DOMAIN']),
+        cmd='pp', defs=server, source_dir=aDirectory, final_target=aDirectory
+        )]
+#%endif
 
   # We don't do PROPER traversial but we can go to any directory we want from the
   # topsrcdir build file.
